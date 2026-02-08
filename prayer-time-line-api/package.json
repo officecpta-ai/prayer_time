@@ -1,0 +1,20 @@
+{
+  "name": "prayer-time-line-api",
+  "version": "1.0.0",
+  "description": "LINE OA 中介 API（Cloud Run），串接 Ragic：訂閱檢查、內容顯示、閱讀紀錄。",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "@google-cloud/firestore": "^7.11.0",
+    "google-auth-library": "^9.15.0"
+  }
+}
+

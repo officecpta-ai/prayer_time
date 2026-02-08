@@ -1,0 +1,17 @@
+{
+  "name": "prayer-time-api",
+  "version": "1.0.0",
+  "description": "禱告時光 GPTs 中介 API，串接 Ragic",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2"
+  }
+}
