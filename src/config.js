@@ -40,6 +40,16 @@ function getConfig() {
     church: process.env.RAGIC_SUBSCRIPTION_FIELD_CHURCH || '1011773',
   };
 
+  // Ragic 對話紀錄表（gpt/10）：紀錄時間 1011812, email 1011813, 姓名 1011814, 角色 1011817, 訊息內容 1011815, 對話ID 1011818
+  const conversationLogFieldIds = {
+    record_time: process.env.RAGIC_CONVERSATION_FIELD_RECORD_TIME || '1011812',
+    email: process.env.RAGIC_CONVERSATION_FIELD_EMAIL || '1011813',
+    user_name: process.env.RAGIC_CONVERSATION_FIELD_USER_NAME || '1011814',
+    role: process.env.RAGIC_CONVERSATION_FIELD_ROLE || '1011817',
+    message: process.env.RAGIC_CONVERSATION_FIELD_MESSAGE || '1011815',
+    conversation_id: process.env.RAGIC_CONVERSATION_FIELD_CONVERSATION_ID || '1011818',
+  };
+
   return {
     ragicBaseUrl: baseUrl.replace(/\/$/, ''),
     ragicApiKey: apiKey,
@@ -52,6 +62,7 @@ function getConfig() {
     publicBaseUrl,
     readingRecordFieldIds,
     subscriptionFieldIds,
+    conversationLogFieldIds,
   };
 }
 

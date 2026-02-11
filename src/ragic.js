@@ -5,6 +5,7 @@ const RAGIC_SHEETS = {
   CONTENT: 'gpt/3',
   SUBSCRIPTION: 'gpt/4',
   READING_RECORD: 'gpt/7',
+  CONVERSATION_LOG: 'gpt/10',
 };
 
 /**
@@ -356,6 +357,39 @@ async function createReadingRecord(payload) {
 }
 
 /**
+ * 寫入一筆對話紀錄到 gpt/10（對話紀錄表）。由各 route 在處理請求成功時順便呼叫（fire-and-forget）。
+ * @param {{ email: string, user_name?: string, role: 'user'|'assistant', message: string, conversation_id?: string, record_time?: string }} payload
+ */
+async function createConversationLog(payload) {
+  const { ragicBaseUrl, ragicApiKey, ragicApiKeyInQuery, ragicBasicRaw, conversationLogFieldIds } = getConfig();
+  const url = new URL(`${ragicBaseUrl}/${RAGIC_SHEETS.CONVERSATION_LOG}`);
+  url.searchParams.set('api', 'true');
+  if (ragicApiKey && ragicApiKeyInQuery) url.searchParams.set('APIKey', ragicApiKey);
+  const headers = {
+    'Content-Type': 'application/json',
+    ...getRagicAuthHeader(ragicApiKey, ragicApiKeyInQuery, ragicBasicRaw),
+  };
+  const ids = conversationLogFieldIds;
+  const body = {
+    [ids.record_time]: payload.record_time || formatRagicDateTimeTaipei(new Date()),
+    [ids.email]: String(payload.email || ''),
+    [ids.user_name]: String(payload.user_name ?? ''),
+    [ids.role]: String(payload.role || 'user'),
+    [ids.message]: String(payload.message ?? ''),
+    [ids.conversation_id]: String(payload.conversation_id ?? ''),
+  };
+  const res = await fetch(url.toString(), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`Ragic 寫入對話紀錄錯誤 ${res.status}: ${await res.text()}`);
+  }
+  return res.json();
+}
+
+/**
  * 取得使用者在指定書本的最後閱讀天數（從 gpt/7 閱讀紀錄取 reading_day 最大值）
  * @returns {Promise<number|null>} last_day 或 null（尚無紀錄）
  */
@@ -416,6 +450,7 @@ module.exports = {
   getSubscriptionUserInfo,
   getProgressByEmail,
   createReadingRecord,
+  createConversationLog,
   getLastReadingDayByEmailAndBook,
   getBookDayTitles,
   RAGIC_SHEETS,

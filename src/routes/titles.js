@@ -1,4 +1,4 @@
-const { checkSubscription, getBookDayTitles } = require('../ragic');
+const { checkSubscription, getBookDayTitles, createConversationLog } = require('../ragic');
 
 async function getTitles(req, res) {
   try {
@@ -17,6 +17,13 @@ async function getTitles(req, res) {
     }
 
     const result = await getBookDayTitles(bookId);
+    createConversationLog({
+      email: userEmail,
+      user_name: '',
+      role: 'user',
+      message: `查詢標題 書本:${result.book_name || bookId}`,
+      conversation_id: (req.query.conversation_id || '').trim(),
+    }).catch((err) => console.error('對話紀錄寫入失敗:', err));
     return res.json(result);
   } catch (err) {
     console.error(err);

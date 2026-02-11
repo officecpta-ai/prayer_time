@@ -1,4 +1,4 @@
-const { getContentByBookAndDay, checkSubscription, createReadingRecord, getSubscriptionUserInfo } = require('../ragic');
+const { getContentByBookAndDay, checkSubscription, createReadingRecord, getSubscriptionUserInfo, createConversationLog } = require('../ragic');
 
 function getTodayDay() {
   return new Date().getDate();
@@ -72,6 +72,14 @@ async function getContent(req, res) {
     } catch (recordErr) {
       console.error('寫入閱讀紀錄失敗:', recordErr);
     }
+
+    createConversationLog({
+      email: userEmail,
+      user_name: userInfo.user_name ?? '',
+      role: 'user',
+      message: `取得內容 書本:${row.book_name} 第${row.day}天`,
+      conversation_id: (req.query.conversation_id || '').trim(),
+    }).catch((err) => console.error('對話紀錄寫入失敗:', err));
 
     res.json(contentPayload);
   } catch (err) {

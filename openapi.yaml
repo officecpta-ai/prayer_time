@@ -1,11 +1,13 @@
 openapi: 3.1.0
 info:
   title: 禱告時光 API
-  description: 禱告手冊清單、每日內容、閱讀進度。身分驗證可二選一：(1) query 參數 email；(2) Authorization Bearer（OAuth）。建議 GPTs 使用 email 流程：先問 email → 呼叫 GET /email/books → 有訂閱則列書選書，無則提供訂閱表單連結。
+  description: |
+    禱告手冊清單、每日內容、閱讀進度。身分驗證可二選一：(1) query 參數 email；(2) Authorization Bearer（OAuth）。建議 GPTs 使用 email 流程：先問 email → 呼叫 GET /email/books → 有訂閱則列書選書，無則提供訂閱表單連結。
+    選填：任一 API 可帶 query 參數 conversation_id（同一輪對話使用相同 ID），後端會將請求寫入對話紀錄（gpt/10）並以該 ID 歸組。
   version: 1.0.0
 
 servers:
-  - url: [1mhttps://prayer-time-api-43747267943.asia-northeast1.run.app[m
+  - url: https://prayer-time-api-43747267943.asia-northeast1.run.app
     description: Cloud Run 禱告時光 API
 
 paths:
@@ -20,6 +22,11 @@ paths:
           required: true
           schema: { type: string, format: email }
           description: 使用者訂閱時使用的 Email
+        - name: conversation_id
+          in: query
+          required: false
+          schema: { type: string }
+          description: 選填。同一輪對話使用相同 ID，會寫入對話紀錄（gpt/10）並歸組
       responses:
         '200':
           description: 已訂閱書單與表單連結
@@ -116,6 +123,11 @@ paths:
           required: false
           schema: { type: integer, minimum: 1, maximum: 31 }
           description: 第幾天（1–31），不傳則為「今天」對應的日
+        - name: conversation_id
+          in: query
+          required: false
+          schema: { type: string }
+          description: 選填。同一輪對話使用相同 ID，會寫入對話紀錄（gpt/10）
       responses:
         '200':
           description: 當日內容或未訂閱結果（依 body 的 subscribed 判斷）
