@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 禱告時光 API - 健康檢查（可單獨執行或供 CI 使用）
+# 第一階門訓課程助理 API - 健康檢查（可單獨執行或供 CI 使用）
 # 用法：./scripts/health-check.sh [服務網址]
 #       或 export HEALTH_CHECK_URL=... 或 GCP_PROJECT_ID + GCP_REGION（從 gcloud 取得網址）
 
@@ -20,7 +20,7 @@ if [[ -z "$SERVICE_URL" ]]; then
     echo "  或 export GCP_PROJECT_ID=...（搭配 gcloud 預設專案或 GCP_REGION）"
     exit 1
   fi
-  SERVICE_URL=$(gcloud run services describe prayer-time-api --region "$REGION" --format='value(status.url)' --project "$PROJECT_ID" 2>/dev/null)
+  SERVICE_URL=$(gcloud run services describe stage1-discipleship-assistant-api --region "$REGION" --format='value(status.url)' --project "$PROJECT_ID" 2>/dev/null)
 fi
 
 if [[ -z "$SERVICE_URL" ]]; then

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# 禱告時光 API - 部署到 Google Cloud Run
+# 第一階門訓課程助理 API - 部署到 Google Cloud Run
 # 使用前：請先完成 docs/GCP_SETUP.md 的「一～五」步驟（gcloud 登入、專案、API、Secret、權限）
-# OAuth：若 .env 中有 GOOGLE_CLIENT_ID、GOOGLE_CLIENT_SECRET、PUBLIC_BASE_URL，部署時會一併帶上；亦可改為用 Secret 掛載 GOOGLE_CLIENT_SECRET。
 
 set -e
 
@@ -47,34 +46,47 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT_DIR"
 
-# 從 .env 讀取 OAuth 變數（若存在），以便每次部署一併帶上
+# 從 .env 讀取變數（若存在）
 if [[ -f "$ROOT_DIR/.env" ]]; then
   set -a
   source "$ROOT_DIR/.env"
   set +a
 fi
 
-# 環境變數：Ragic + 選填 OAuth（若 .env 有 GOOGLE_CLIENT_ID、PUBLIC_BASE_URL，密鑰可用 .env 或 Secret）
-ENV_VARS="RAGIC_BASE_URL=https://ap13.ragic.com/asiahope,RAGIC_BASIC_RAW=true,RAGIC_SUBSCRIPTION_FORM_URL=https://ap13.ragic.com/asiahope/gpt/4?ragic-web-embed=true&webaction=form&ver=new&version=2"
+# 環境變數：Ragic
+ENV_VARS="RAGIC_BASE_URL=https://ap13.ragic.com/asiahope,RAGIC_BASIC_RAW=true"
 SECRETS_STR="RAGIC_API_KEY=ragic-api-key:latest"
 
-if [[ -n "$GOOGLE_CLIENT_ID" && -n "$PUBLIC_BASE_URL" ]]; then
-  ENV_VARS="${ENV_VARS},PUBLIC_BASE_URL=${PUBLIC_BASE_URL},GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}"
-  if [[ -n "$GOOGLE_CLIENT_SECRET" ]]; then
-    ENV_VARS="${ENV_VARS},GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}"
-    echo "已從 .env 帶入 OAuth 變數（PUBLIC_BASE_URL、GOOGLE_CLIENT_ID、GOOGLE_CLIENT_SECRET）"
-  else
-    GOOGLE_SECRET_NAME="${GOOGLE_CLIENT_SECRET_SECRET:-google-oauth-client-secret}"
-    SECRETS_STR="${SECRETS_STR},GOOGLE_CLIENT_SECRET=${GOOGLE_SECRET_NAME}:latest"
-    echo "已從 .env 帶入 OAuth 變數（PUBLIC_BASE_URL、GOOGLE_CLIENT_ID）；GOOGLE_CLIENT_SECRET 從 Secret「${GOOGLE_SECRET_NAME}」掛載"
+# Qdrant + OpenAI（整本手冊 QA）
+if [[ -n "$QDRANT_URL" ]]; then
+  ENV_VARS="${ENV_VARS},QDRANT_URL=${QDRANT_URL}"
+  if [[ -n "$QDRANT_API_KEY" ]]; then
+    ENV_VARS="${ENV_VARS},QDRANT_API_KEY=${QDRANT_API_KEY}"
   fi
+  if [[ -n "$QDRANT_COLLECTION" ]]; then
+    ENV_VARS="${ENV_VARS},QDRANT_COLLECTION=${QDRANT_COLLECTION}"
+  fi
+  echo "已從 .env 帶入 Qdrant 變數"
+fi
+if [[ -n "$SYNC_QDRANT_SECRET" ]]; then
+  ENV_VARS="${ENV_VARS},SYNC_QDRANT_SECRET=${SYNC_QDRANT_SECRET}"
+  echo "已從 .env 帶入 SYNC_QDRANT_SECRET（供排程 POST /internal/sync-ragic-to-qdrant）"
+fi
+if [[ -n "$OPENAI_API_KEY" ]]; then
+  ENV_VARS="${ENV_VARS},OPENAI_API_KEY=${OPENAI_API_KEY}"
+  echo "已從 .env 帶入 OPENAI_API_KEY"
+else
+  OPENAI_SECRET_NAME="${OPENAI_API_KEY_SECRET:-openai-api-key}"
+  SECRETS_STR="${SECRETS_STR},OPENAI_API_KEY=${OPENAI_SECRET_NAME}:latest"
+  echo "OPENAI_API_KEY 從 Secret「${OPENAI_SECRET_NAME}」掛載（請先在 Secret Manager 建立）"
 fi
 
 # 部署並擷取輸出的 Service URL（與終端機顯示一致，避免 describe 回傳不同格式）
-DEPLOY_OUTPUT=$(gcloud run deploy prayer-time-api \
+DEPLOY_OUTPUT=$(gcloud run deploy stage1-discipleship-assistant-api \
   --source . \
   --region "$REGION" \
   --allow-unauthenticated \
+  --timeout=900 \
   --set-env-vars "$ENV_VARS" \
   --set-secrets "$SECRETS_STR" \
   --project "$PROJECT_ID" 2>&1)
@@ -83,7 +95,7 @@ echo "$DEPLOY_OUTPUT"
 # 從部署輸出取得 Service URL（與上方顯示一致），若無則改用 describe
 SERVICE_URL=$(echo "$DEPLOY_OUTPUT" | grep -E '^Service URL:' | sed 's|^Service URL:[[:space:]]*||' | head -1)
 if [[ -z "$SERVICE_URL" ]]; then
-  SERVICE_URL=$(gcloud run services describe prayer-time-api --region "$REGION" --format='value(status.url)' --project "$PROJECT_ID" 2>/dev/null)
+  SERVICE_URL=$(gcloud run services describe stage1-discipleship-assistant-api --region "$REGION" --format='value(status.url)' --project "$PROJECT_ID" 2>/dev/null)
 fi
 if [[ -n "$SERVICE_URL" && -f "$ROOT_DIR/openapi.yaml" ]]; then
   if sed -i.bak "s|  - url: .*|  - url: ${SERVICE_URL}|" "$ROOT_DIR/openapi.yaml" 2>/dev/null; then
@@ -94,13 +106,16 @@ if [[ -n "$SERVICE_URL" && -f "$ROOT_DIR/openapi.yaml" ]]; then
 fi
 
 if [[ -n "$SERVICE_URL" ]]; then
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$SERVICE_URL/" 2>/dev/null || echo "000")
+  # 僅保留數字，避免終端機顯示異常；並加逾時避免卡住
+  HTTP_CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$SERVICE_URL/" 2>/dev/null || true)
+  HTTP_CODE=$(printf '%s' "$HTTP_CODE" | tr -cd '0-9')
+  [[ -z "$HTTP_CODE" ]] && HTTP_CODE="unknown"
   if [[ "$HTTP_CODE" == "200" ]]; then
     echo ""
     echo "健康檢查通過：$SERVICE_URL/ 回傳 200"
   else
     echo ""
-    echo "提醒：請手動確認服務是否正常（$SERVICE_URL/ 目前回傳: $HTTP_CODE）"
+    echo "提醒：請手動確認服務是否正常（$SERVICE_URL/ 目前 HTTP 狀態碼: ${HTTP_CODE}）"
   fi
 fi
 

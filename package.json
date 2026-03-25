@@ -1,7 +1,7 @@
 {
-  "name": "prayer-time-api",
+  "name": "stage1-discipleship-assistant-api",
   "version": "1.0.0",
-  "description": "禱告時光 GPTs 中介 API，串接 Ragic",
+  "description": "第一階門訓課程助理 GPTs 中介 API，串接 Ragic",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
@@ -11,7 +11,9 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@qdrant/js-client-rest": "^1.17.0",
     "dotenv": "^16.3.1",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "openai": "^4.67.0"
   }
 }

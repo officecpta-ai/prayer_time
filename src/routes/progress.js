@@ -1,4 +1,4 @@
-const { getProgressByEmail, createConversationLog } = require('../ragic');
+const { getProgressByEmail } = require('../ragic');
 
 async function getProgress(req, res) {
   try {
@@ -6,13 +6,6 @@ async function getProgress(req, res) {
     const row = await getProgressByEmail(userEmail);
 
     if (!row) {
-      createConversationLog({
-        email: userEmail,
-        user_name: '',
-        role: 'user',
-        message: '查詢閱讀進度',
-        conversation_id: (req.query.conversation_id || '').trim(),
-      }).catch((err) => console.error('對話紀錄寫入失敗:', err));
       return res.json({
         last_book_id: null,
         last_book_name: null,
@@ -22,13 +15,6 @@ async function getProgress(req, res) {
       });
     }
 
-    createConversationLog({
-      email: userEmail,
-      user_name: '',
-      role: 'user',
-      message: '查詢閱讀進度',
-      conversation_id: (req.query.conversation_id || '').trim(),
-    }).catch((err) => console.error('對話紀錄寫入失敗:', err));
     res.json({
       last_book_id: row.last_book_id,
       last_book_name: row.last_book_name,

@@ -1,4 +1,4 @@
-const { checkSubscription, getBookDayTitles, createConversationLog } = require('../ragic');
+const { checkSubscription, getBookDayTitles } = require('../ragic');
 
 async function getTitles(req, res) {
   try {
@@ -12,18 +12,11 @@ async function getTitles(req, res) {
     if (!subscribed) {
       return res.status(200).json({
         subscribed: false,
-        error: '很抱歉，您尚未訂閱禱告時光！',
+        error: '很抱歉，您尚未訂閱第一階門訓課程助理！',
       });
     }
 
     const result = await getBookDayTitles(bookId);
-    createConversationLog({
-      email: userEmail,
-      user_name: '',
-      role: 'user',
-      message: `查詢標題 書本:${result.book_name || bookId}`,
-      conversation_id: (req.query.conversation_id || '').trim(),
-    }).catch((err) => console.error('對話紀錄寫入失敗:', err));
     return res.json(result);
   } catch (err) {
     console.error(err);

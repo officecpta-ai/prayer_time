@@ -1,22 +1,38 @@
 /**
- * 讀取環境變數：PORT、Ragic 基礎網址與 API Key、訂閱表單連結
+ * 讀取環境變數：PORT、Ragic 基礎網址與 API Key
  */
 function getConfig() {
   const baseUrl = process.env.RAGIC_BASE_URL || 'https://ap13.ragic.com/asiahope';
-  const apiKey = process.env.RAGIC_API_KEY || '';
-  const subscriptionFormUrl =
-    process.env.RAGIC_SUBSCRIPTION_FORM_URL || 'https://ap13.ragic.com/asiahope/gpt/4?ragic-web-embed=true&webaction=form&ver=new&version=2';
+  let apiKey = (process.env.RAGIC_API_KEY || '').trim();
+  if ((apiKey.startsWith('"') && apiKey.endsWith('"')) || (apiKey.startsWith("'") && apiKey.endsWith("'"))) {
+    apiKey = apiKey.slice(1, -1).trim();
+  }
 
   if (!apiKey) {
     console.warn('RAGIC_API_KEY 未設定，Ragic 請求可能失敗');
   }
 
   const apiKeyInQuery = process.env.RAGIC_API_KEY_IN_QUERY === 'true';
-  const basicRaw = process.env.RAGIC_BASIC_RAW === 'true';
+  // 與 scripts/deploy.sh（RAGIC_BASIC_RAW=true）一致：Ragic 文件為 Authorization: Basic + 金鑰字面。
+  // 僅當明確設 RAGIC_BASIC_RAW=false 時才改用 Base64(apiKey:)。
+  const basicRaw = process.env.RAGIC_BASIC_RAW !== 'false';
 
-  const googleClientId = process.env.GOOGLE_CLIENT_ID || '';
-  const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET || '';
-  const publicBaseUrl = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+  // Qdrant（整本手冊 QA 向量庫）
+  const qdrantUrl = (process.env.QDRANT_URL || '').replace(/\/$/, '');
+  const qdrantApiKey = process.env.QDRANT_API_KEY || '';
+  const qdrantCollection = process.env.QDRANT_COLLECTION || 'prayer_chunks';
+  let syncQdrantSecret = (process.env.SYNC_QDRANT_SECRET || '').trim();
+  if (
+    (syncQdrantSecret.startsWith('"') && syncQdrantSecret.endsWith('"')) ||
+    (syncQdrantSecret.startsWith("'") && syncQdrantSecret.endsWith("'"))
+  ) {
+    syncQdrantSecret = syncQdrantSecret.slice(1, -1).trim();
+  }
+
+  // OpenAI（embedding + QA 回答）
+  const openaiApiKey = process.env.OPENAI_API_KEY || '';
+  const openaiEmbedModel = process.env.OPENAI_EMBED_MODEL || 'text-embedding-3-small';
+  const openaiChatModel = process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini';
 
   // Ragic 閱讀紀錄表（gpt/7）：每次閱讀寫入一筆；姓名 1011771、教會 1011772
   const readingRecordFieldIds = {
@@ -29,25 +45,26 @@ function getConfig() {
     church: process.env.RAGIC_READING_RECORD_FIELD_CHURCH || '1011772',
   };
 
-  // Ragic 訂閱表（gpt/4）欄位 ID（表單：禱告手冊訂閱 ap13.ragic.com/asiahope/gpt/4）
-  // 姓名=1011599, email=1011595, 選擇訂閱書本=1011596, 書名=1011603, is_active=1011597, 教會=1011773
-  const subscriptionFieldIds = {
-    user_name: process.env.RAGIC_SUBSCRIPTION_FIELD_USER_NAME || '1011599',
-    user_email: process.env.RAGIC_SUBSCRIPTION_FIELD_USER_EMAIL || '1011595',
-    book_id: process.env.RAGIC_SUBSCRIPTION_FIELD_BOOK_ID || '1011596',
-    book_name: process.env.RAGIC_SUBSCRIPTION_FIELD_BOOK_NAME || '1011603',
-    is_active: process.env.RAGIC_SUBSCRIPTION_FIELD_IS_ACTIVE || '1011597',
-    church: process.env.RAGIC_SUBSCRIPTION_FIELD_CHURCH || '1011773',
+  // 禱告內容表（gpt/3）：若 JSON 以 Ragic 欄位數字 ID 為 key，請設下列環境變數（設計模式欄位 ID）
+  const contentSheetFieldIds = {
+    book_id: process.env.RAGIC_CONTENT_FIELD_BOOK_ID || '',
+    book_name: process.env.RAGIC_CONTENT_FIELD_BOOK_NAME || '',
+    day: process.env.RAGIC_CONTENT_FIELD_DAY || '',
+    title: process.env.RAGIC_CONTENT_FIELD_TITLE || '',
+    content: process.env.RAGIC_CONTENT_FIELD_CONTENT || '',
   };
 
-  // Ragic 對話紀錄表（gpt/10）：紀錄時間 1011812, email 1011813, 姓名 1011814, 角色 1011817, 訊息內容 1011815, 對話ID 1011818
-  const conversationLogFieldIds = {
-    record_time: process.env.RAGIC_CONVERSATION_FIELD_RECORD_TIME || '1011812',
-    email: process.env.RAGIC_CONVERSATION_FIELD_EMAIL || '1011813',
-    user_name: process.env.RAGIC_CONVERSATION_FIELD_USER_NAME || '1011814',
-    role: process.env.RAGIC_CONVERSATION_FIELD_ROLE || '1011817',
-    message: process.env.RAGIC_CONVERSATION_FIELD_MESSAGE || '1011815',
-    conversation_id: process.env.RAGIC_CONVERSATION_FIELD_CONVERSATION_ID || '1011818',
+  // Wix 訂閱表（gpt/9）欄位 ID
+  const wixSubscriptionFieldIds = {
+    name: process.env.RAGIC_WIX_FIELD_NAME || '1012061',
+    email: process.env.RAGIC_WIX_FIELD_EMAIL || '1011774',
+    mobile: process.env.RAGIC_WIX_FIELD_MOBILE || '1012062',
+    course_name: process.env.RAGIC_WIX_FIELD_COURSE_NAME || '1011777',
+    price_amount: process.env.RAGIC_WIX_FIELD_PRICE_AMOUNT || '1011779',
+    start_date: process.env.RAGIC_WIX_FIELD_START_DATE || '1011780',
+    end_date: process.env.RAGIC_WIX_FIELD_END_DATE || '1011783',
+    orderNumbe: process.env.RAGIC_WIX_FIELD_ORDER_NUMBE || '1011778',
+    ticketNumber: process.env.RAGIC_WIX_FIELD_TICKET_NUMBER || '1012060',
   };
 
   return {
@@ -55,14 +72,17 @@ function getConfig() {
     ragicApiKey: apiKey,
     ragicApiKeyInQuery: apiKeyInQuery,
     ragicBasicRaw: basicRaw,
-    subscriptionFormUrl,
     port: parseInt(process.env.PORT || '8080', 10),
-    googleClientId,
-    googleClientSecret,
-    publicBaseUrl,
+    qdrantUrl,
+    qdrantApiKey,
+    qdrantCollection,
+    syncQdrantSecret,
+    openaiApiKey,
+    openaiEmbedModel,
+    openaiChatModel,
     readingRecordFieldIds,
-    subscriptionFieldIds,
-    conversationLogFieldIds,
+    contentSheetFieldIds,
+    wixSubscriptionFieldIds,
   };
 }
 

@@ -1,11 +1,11 @@
-# 禱告時光 API
+# 第一階門訓課程助理 API
 
-禱告時光 GPTs 中介 API，串接 Ragic：手冊清單、每日內容、訂閱檢查、閱讀進度。
+第一階門訓課程助理 GPTs 中介 API，串接 Ragic：手冊清單、每日內容、訂閱檢查、閱讀進度。
 
 ## 架構
 
-- **GPTs** → Action（OAuth Google）→ 本 API（Cloud Run）→ Ragic API
-- 認證：`Authorization: Bearer <Google OAuth token>`，後端向 Google 驗證並取得 email，用於訂閱與進度。
+- **GPTs** → Action → 本 API（Cloud Run）→ Ragic API
+- 認證：query 參數 `email`，用於訂閱與進度。
 
 ## 端點
 
@@ -31,17 +31,17 @@
 2. 在**另一個**終端機執行：
 
 ```bash
-# 根路徑（應回傳 {"service":"禱告時光 API","status":"ok"}）
+# 根路徑（應回傳 {"service":"第一階門訓課程助理 API","status":"ok"}）
 curl http://localhost:8080/
 
 # 手冊清單（需 .env 有 RAGIC_API_KEY）
 curl http://localhost:8080/books
 
-# 每日內容（需 Bearer token；未訂閱會 403）
-curl "http://localhost:8080/content?book_id=手冊ID" -H "Authorization: Bearer 你的Google_OAuth_token"
+# 每日內容（需 email；未訂閱會 403）
+curl "http://localhost:8080/content?email=訂閱email&book_id=手冊ID"
 
-# 閱讀進度（需 Bearer token）
-curl http://localhost:8080/progress -H "Authorization: Bearer 你的Google_OAuth_token"
+# 閱讀進度（需 email）
+curl "http://localhost:8080/progress?email=訂閱email"
 ```
 
 ### 部署後測試（Cloud Run）
@@ -57,13 +57,6 @@ export GCP_PROJECT_ID=prayer-time-486401
 
 通過時會印出 `/` 與 `/books` 的 HTTP 狀態碼，且 exit code 為 0；未通過為 1，可給 CI 使用。
 
-### OAuth 代理測試（選用）
-
-若已設定 OAuth 環境變數，可在瀏覽器開啟授權頁確認會導向 Google 登入：
-
-- 授權 URL：`https://你的Cloud_Run網址/oauth/authorize`
-- 登入完成後應導回 GPTs 或顯示錯誤頁（依 GPTs 設定）；後端 `/oauth/callback`、`/oauth/token` 由 GPTs 呼叫，一般不需手動測。
-
 ## 部署（Google Cloud Run）
 
 **完整步驟**請看 [docs/GCP_SETUP.md](docs/GCP_SETUP.md)，包含：gcloud 安裝登入、建立專案、啟用 API、建立 Secret、授權、部署。
@@ -75,13 +68,11 @@ export GCP_PROJECT_ID=prayer-time-486401
 ./scripts/deploy.sh
 ```
 
-若 `.env` 中已設定 `GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET`、`PUBLIC_BASE_URL`，部署時會一併帶上 OAuth 變數，無需再單獨執行 `./scripts/update-cloudrun-env.sh`。
-
-或手動執行 gcloud（需已建立 `ragic-api-key` Secret 並授權；OAuth 變數可事後用 `./scripts/update-cloudrun-env.sh` 更新）：
+或手動執行 gcloud（需已建立 `ragic-api-key` Secret 並授權）：
 
 ```bash
-gcloud run deploy prayer-time-api --source . --region asia-northeast1 --allow-unauthenticated \
-  --set-env-vars "RAGIC_BASE_URL=https://ap13.ragic.com/asiahope,RAGIC_BASIC_RAW=true,RAGIC_SUBSCRIPTION_FORM_URL=https://ap13.ragic.com/asiahope/gpt/4" \
+gcloud run deploy stage1-discipleship-assistant-api --source . --region asia-northeast1 --allow-unauthenticated \
+  --set-env-vars "RAGIC_BASE_URL=https://ap13.ragic.com/asiahope,RAGIC_BASIC_RAW=true" \
   --set-secrets "RAGIC_API_KEY=ragic-api-key:latest"
 ```
 
@@ -91,16 +82,11 @@ gcloud run deploy prayer-time-api --source . --region asia-northeast1 --allow-un
 
 - gpt/5：禱告手冊清單（book_id, book_name）
 - gpt/3：禱告手冊內容（book_id, book_name, day, title, content）
-- gpt/4：禱告手冊訂閱（user_email, book_id, is_active）；表單連結供未訂閱使用者填寫
+- gpt/9：Wix 訂閱資料（name, Email, mobile, course_name, price_amount, start_date, end_date, orderNumbe, ticketNumber）；驗證使用 Email 與起訖日
 - gpt/7：閱讀紀錄（user_email, book_id, book_name, reading_day, read_time）。本系統以閱讀紀錄作為唯一來源：每次閱讀新增一筆；閱讀進度（/progress）由最後一次閱讀紀錄推導。
 
 ## GPTs 設定要點
 
 - 匯入 `openapi.yaml`，Server URL 填 Cloud Run 網址。
-- **Actions 驗證**：選 OAuth；為通過「同網域」檢查，授權／權杖 URL 用本 API 的 OAuth 代理：
-  - **授權 URL**：`https://你的Cloud_Run網址/oauth/authorize`
-  - **權杖 URL**：`https://你的Cloud_Run網址/oauth/token`
-  - **範圍**：`email openid profile`
-  - 用戶端 ID、用戶端密碼：填 Google Cloud Console 建立的 OAuth 用戶端 ID 與密鑰。
-- Cloud Run 需設定環境變數：`GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET`、`PUBLIC_BASE_URL`（你的 Cloud Run 網址）。建議在專案根目錄 `.env` 中設定，執行 `./scripts/deploy.sh` 時會一併帶上。
-- Instructions：未訂閱時依 API 回傳的 `subscription_form_url` 提供連結給使用者。
+- **Actions 驗證**：選「無」或 API Key（本 API 使用 query 參數 email 驗證）。
+- Instructions：未訂閱時僅回覆尚未訂閱，不提供註冊連結。

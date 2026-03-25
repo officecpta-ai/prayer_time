@@ -3,9 +3,8 @@ const { getConfig } = require('./config');
 const RAGIC_SHEETS = {
   BOOK_LIST: 'gpt/5',
   CONTENT: 'gpt/3',
-  SUBSCRIPTION: 'gpt/4',
+  WIX_SUBSCRIPTION: 'gpt/9',
   READING_RECORD: 'gpt/7',
-  CONVERSATION_LOG: 'gpt/10',
 };
 
 /**
@@ -22,6 +21,17 @@ function getRagicAuthHeader(apiKey, useQueryKey, basicRaw) {
   if (!apiKey || useQueryKey) return {};
   const value = basicRaw ? apiKey : Buffer.from(`${apiKey}:`).toString('base64');
   return { Authorization: `Basic ${value}` };
+}
+
+/**
+ * Ragic 在認證／權限／參數錯誤時常回 { status, msg, code }，與「列 ID 為 key」的正常資料不同
+ */
+function isRagicApiMessageEnvelope(data) {
+  if (data == null || typeof data !== 'object' || Array.isArray(data)) return false;
+  const keys = Object.keys(data);
+  if (keys.length === 0) return false;
+  if (keys.some((k) => /^\d+$/.test(k))) return false;
+  return keys.includes('msg') && (keys.includes('status') || keys.includes('code'));
 }
 
 async function ragicGet(sheetPath, queryParams = {}) {
@@ -41,15 +51,69 @@ async function ragicGet(sheetPath, queryParams = {}) {
   if (!res.ok) {
     throw new Error(`Ragic 錯誤 ${res.status}: ${await res.text()}`);
   }
-  return res.json();
+  const data = await res.json();
+  if (isRagicApiMessageEnvelope(data)) {
+    const msg = String(data.msg ?? '');
+    const st = String(data.status ?? '');
+    const code = data.code != null ? String(data.code) : 'n/a';
+    throw new Error(
+      `Ragic API 未回傳表列資料（${st}）：${msg}（code ${code}）。若金鑰與權限正確仍為 guest：本專案預設與 Cloud Run 相同為「Basic + 金鑰字面」（勿設 RAGIC_BASIC_RAW=false 除非確定要 Base64）；亦可改試 RAGIC_API_KEY_IN_QUERY=true。瀏覽器開 ?api=true 僅代表登入後可讀，與程式帶 API Key 不同。`
+    );
+  }
+  return data;
 }
 
 /**
  * 將 Ragic 回傳的 {"列ID": {...}} 轉成陣列
+ * 亦處理：頂層為陣列、或包在 data / records / result 內
  */
 function rowsToArray(obj) {
-  if (!obj || typeof obj !== 'object') return [];
-  return Object.values(obj).filter((row) => row && typeof row === 'object');
+  if (obj == null) return [];
+  if (Array.isArray(obj)) {
+    return obj.filter((row) => row && typeof row === 'object' && !Array.isArray(row));
+  }
+  if (typeof obj !== 'object') return [];
+  if (Array.isArray(obj.data)) {
+    return obj.data.filter((row) => row && typeof row === 'object' && !Array.isArray(row));
+  }
+  if (obj.data != null && typeof obj.data === 'object' && !Array.isArray(obj.data)) {
+    return rowsToArray(obj.data);
+  }
+  if (Array.isArray(obj.records)) {
+    return obj.records.filter((row) => row && typeof row === 'object' && !Array.isArray(row));
+  }
+  if (Array.isArray(obj.result)) {
+    return obj.result.filter((row) => row && typeof row === 'object' && !Array.isArray(row));
+  }
+  return Object.values(obj).filter(
+    (row) => row && typeof row === 'object' && !Array.isArray(row)
+  );
+}
+
+const CONTENT_NAME_KEYS = {
+  book_id: ['book_id', 'bookId', 'Book_ID'],
+  book_name: ['book_name', 'bookName', 'Book_name'],
+  day: ['day', 'Day'],
+  title: ['title', 'Title'],
+  content: ['content', 'Content'],
+};
+
+/**
+ * 從 gpt/3 列讀欄位：先試欄位名稱別名，再試 RAGIC_CONTENT_FIELD_* 數字 ID
+ */
+function getContentSheetField(row, fieldName) {
+  if (!row || typeof row !== 'object') return '';
+  const { contentSheetFieldIds } = getConfig();
+  const keys = CONTENT_NAME_KEYS[fieldName] || [fieldName];
+  for (const k of keys) {
+    const v = row[k];
+    if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+  }
+  const id = contentSheetFieldIds[fieldName];
+  if (id && row[id] !== undefined && row[id] !== null && String(row[id]).trim() !== '') {
+    return row[id];
+  }
+  return '';
 }
 
 /** 禱告手冊清單 gpt/5 */
@@ -70,38 +134,31 @@ async function getContentByBookAndDay(bookId, day) {
   const rows = rowsToArray(data);
   const targetDay = Number(day);
   const normId = (v) => String(v || '').trim();
-  const match = rows.find(
-    (r) => Number(r.day) === targetDay && normId(r.book_id) === normId(bookId)
-  );
+  const match = rows.find((r) => {
+    const d = Number(getContentSheetField(r, 'day'));
+    const bid = normId(getContentSheetField(r, 'book_id'));
+    return d === targetDay && bid === normId(bookId);
+  });
   return match || null;
 }
 
-/** 僅當 is_active 為明確停用值時視為未訂閱；其餘有值或常見啟用寫法皆視為有效 */
-function isSubscriptionActive(v) {
-  if (v == null || v === '') return false;
-  const s = String(v).toLowerCase().trim();
-  if (s === 'disable' || s === 'disabled' || s === 'no' || s === '否' || s === '0') return false;
-  if (v === true) return true;
-  return (
-    s === 'yes' || s === '是' || s === 'enable' || s === 'enabled' || s === '1' ||
-    s === '啟用' || s === 'active' || s === 'true' || s === '✓' || s === 'v' || s === 'ｏ' || s === 'o'
-  );
-}
-
-/** 訂閱表（gpt/4）中文欄位名對應（Ragic 可能回傳中文 key） */
-const SUB_ALT_KEYS = {
-  user_name: ['user_name', '姓名'],
-  user_email: ['user_email', 'email', 'Email'],
-  book_id: ['book_id', '選擇訂閱書本', '書名'],
-  book_name: ['book_name', '書名', '選擇訂閱書本'],
-  is_active: ['is_active', 'Is_active'],
-  church: ['church', '教會'],
+/** Wix 訂閱表（gpt/9）欄位別名 */
+const WIX_ALT_KEYS = {
+  name: ['name', 'Name'],
+  email: ['email', 'Email'],
+  mobile: ['mobile', 'Mobile'],
+  course_name: ['course_name', 'courseName'],
+  price_amount: ['price_amount', 'priceAmount'],
+  start_date: ['start_date', 'startDate', 'plan_start_date'],
+  end_date: ['end_date', 'endDate', 'plan_end_date'],
+  orderNumbe: ['orderNumbe', 'orderNumber'],
+  ticketNumber: ['ticketNumber', 'ticket_number'],
 };
 
-/** 從一列訂閱資料取欄位值：先試欄位名與中文別名，再試 config 的欄位 ID */
-function getSubField(row, fieldName, ids) {
+/** 從 Wix 訂閱列取欄位值 */
+function getWixField(row, fieldName, ids) {
   if (!row || typeof row !== 'object') return '';
-  const keysToTry = SUB_ALT_KEYS[fieldName] ? [fieldName, ...SUB_ALT_KEYS[fieldName]] : [fieldName];
+  const keysToTry = WIX_ALT_KEYS[fieldName] ? [fieldName, ...WIX_ALT_KEYS[fieldName]] : [fieldName];
   for (const k of keysToTry) {
     const v = row[k];
     if (v !== undefined && v !== null && String(v).trim() !== '') return String(v);
@@ -111,135 +168,126 @@ function getSubField(row, fieldName, ids) {
   return '';
 }
 
-/** 從訂閱列取得 book_id：欄位可能存 book_id 或書名（book_name），用書單做對照 */
-function resolveSubscriptionBookId(row, subscriptionFieldIds, bookIdToName, nameToId) {
-  const raw = getSubField(row, 'book_id', subscriptionFieldIds) || getSubField(row, 'book_name', subscriptionFieldIds);
-  const v = (raw && String(raw).trim()) || '';
+/** 將 Ragic 日期字串轉成 YYYY-MM-DD 比較用 */
+function parseDateToYmd(v) {
   if (!v) return null;
-  if (bookIdToName.has(v)) return v;
-  return nameToId.get(v) || null;
+  const s = String(v).trim();
+  if (!s) return null;
+  const m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  return null;
+}
+
+/** 以台北時區取得今天日期（YYYY-MM-DD） */
+function getTodayYmdInTaipei() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Taipei',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const y = parts.find((p) => p.type === 'year')?.value || '1970';
+  const m = parts.find((p) => p.type === 'month')?.value || '01';
+  const d = parts.find((p) => p.type === 'day')?.value || '01';
+  return `${y}-${m}-${d}`;
+}
+
+/** 檢查 Wix 訂閱是否在有效期間內（today >= start_date AND today <= end_date） */
+function isWixSubscriptionInRange(row, ids) {
+  const startStr = getWixField(row, 'start_date', ids);
+  const endStr = getWixField(row, 'end_date', ids);
+  const start = parseDateToYmd(startStr);
+  const end = parseDateToYmd(endStr);
+  const todayStr = getTodayYmdInTaipei();
+  if (start && todayStr < start) return false;
+  if (end && todayStr > end) return false;
+  return true;
+}
+
+/** 取得 Wix 訂閱表中有效訂閱列（email 匹配且 within 起訖日） */
+function getValidWixRows(rows, userEmail, ids) {
+  const email = String(userEmail || '').toLowerCase().trim();
+  return rows.filter((r) => {
+    const rEmail = getWixField(r, 'email', ids);
+    return rEmail.toLowerCase().trim() === email && isWixSubscriptionInRange(r, ids);
+  });
 }
 
 /**
- * 檢查是否已訂閱 gpt/4：user_email + book_id + is_active 為啟用
- * 訂閱表可能存書名（選擇訂閱書本/書名），會對照 gpt/5 解析為 book_id
+ * 檢查是否已訂閱（Wix gpt/9：email + start_date <= today <= end_date）
+ * Wix 無 book_id，有效訂閱即享有全部手冊
  */
 async function checkSubscription(userEmail, bookId) {
-  const { subscriptionFieldIds } = getConfig();
-  const [subData, bookList] = await Promise.all([
-    ragicGet(RAGIC_SHEETS.SUBSCRIPTION),
-    ragicGet(RAGIC_SHEETS.BOOK_LIST),
-  ]);
-  const rows = rowsToArray(subData);
-  const books = rowsToArray(bookList);
-  const bookIdToName = new Map();
-  const nameToId = new Map();
-  for (const b of books) {
-    if (b.book_id != null) {
-      bookIdToName.set(String(b.book_id), String(b.book_name || ''));
-      if (b.book_name != null) nameToId.set(String(b.book_name).trim(), String(b.book_id));
-    }
-  }
-  const email = String(userEmail || '').toLowerCase().trim();
-  const book = String(bookId || '');
-  const match = rows.find((r) => {
-    const rEmail = getSubField(r, 'user_email', subscriptionFieldIds);
-    const rActive = getSubField(r, 'is_active', subscriptionFieldIds);
-    if (rEmail.toLowerCase().trim() !== email || !isSubscriptionActive(rActive)) return false;
-    const rBookId = resolveSubscriptionBookId(r, subscriptionFieldIds, bookIdToName, nameToId);
-    return rBookId !== null && rBookId === book;
-  });
-  return !!match;
+  const { wixSubscriptionFieldIds } = getConfig();
+  const data = await ragicGet(RAGIC_SHEETS.WIX_SUBSCRIPTION);
+  const rows = rowsToArray(data);
+  const valid = getValidWixRows(rows, userEmail, wixSubscriptionFieldIds);
+  return valid.length > 0;
 }
 
 /**
- * 檢查使用者是否有任一有效訂閱（gpt/4：user_email + is_active 為啟用）
- * 支援 Ragic 回傳欄位名或欄位 ID
+ * 檢查使用者是否有任一有效訂閱（Wix：email + 起訖日內）
  */
 async function hasAnySubscription(userEmail) {
-  const { subscriptionFieldIds } = getConfig();
-  const data = await ragicGet(RAGIC_SHEETS.SUBSCRIPTION);
+  const { wixSubscriptionFieldIds } = getConfig();
+  const data = await ragicGet(RAGIC_SHEETS.WIX_SUBSCRIPTION);
   const rows = rowsToArray(data);
-  const email = String(userEmail || '').toLowerCase().trim();
-  const match = rows.some((r) => {
-    const rEmail = getSubField(r, 'user_email', subscriptionFieldIds);
-    const rActive = getSubField(r, 'is_active', subscriptionFieldIds);
-    return rEmail.toLowerCase().trim() === email && isSubscriptionActive(rActive);
-  });
-  return match;
+  const valid = getValidWixRows(rows, userEmail, wixSubscriptionFieldIds);
+  return valid.length > 0;
 }
 
 /**
- * 依 email 回傳該使用者已訂閱的書單（gpt/4 有紀錄且 is_active，書名從 gpt/5 對應），並從訂閱表取姓名
- * 訂閱表可能存書名（選擇訂閱書本/書名），會對照 gpt/5 解析為 book_id
+ * 依 email 回傳該使用者已訂閱的書單（Wix 有效訂閱即享有全部手冊），並從訂閱表取姓名
  * @returns {Promise<{ books: Array<{ book_id: string, book_name: string }>, user_name: string|null }>}
  */
 async function getSubscribedBooksByEmail(userEmail) {
-  const { subscriptionFieldIds } = getConfig();
+  const { wixSubscriptionFieldIds } = getConfig();
   const [subData, bookList] = await Promise.all([
-    ragicGet(RAGIC_SHEETS.SUBSCRIPTION),
+    ragicGet(RAGIC_SHEETS.WIX_SUBSCRIPTION),
     ragicGet(RAGIC_SHEETS.BOOK_LIST),
   ]);
   const subRows = rowsToArray(subData);
   const books = rowsToArray(bookList);
-  const email = String(userEmail || '').toLowerCase().trim();
-  const bookIdToName = new Map();
-  const nameToId = new Map();
-  for (const b of books) {
-    if (b.book_id != null) {
-      bookIdToName.set(String(b.book_id), String(b.book_name || ''));
-      if (b.book_name != null) nameToId.set(String(b.book_name).trim(), String(b.book_id));
-    }
-  }
-  const seen = new Set();
-  const out = [];
-  let user_name = null;
-  for (const r of subRows) {
-    const rEmail = getSubField(r, 'user_email', subscriptionFieldIds);
-    const rActive = getSubField(r, 'is_active', subscriptionFieldIds);
-    if (rEmail.toLowerCase().trim() !== email || !isSubscriptionActive(rActive)) continue;
-    if (user_name === null) {
-      const name = getSubField(r, 'user_name', subscriptionFieldIds);
-      if (name && String(name).trim()) user_name = String(name).trim();
-    }
-    const bid = resolveSubscriptionBookId(r, subscriptionFieldIds, bookIdToName, nameToId);
-    if (!bid || seen.has(bid)) continue;
-    seen.add(bid);
-    out.push({ book_id: bid, book_name: bookIdToName.get(bid) || bid });
-  }
-  return { books: out, user_name: user_name || null };
+  const valid = getValidWixRows(subRows, userEmail, wixSubscriptionFieldIds);
+  if (valid.length === 0) return { books: [], user_name: null };
+  const first = valid[0];
+  const name = getWixField(first, 'name', wixSubscriptionFieldIds).trim();
+  const user_name = name || null;
+  const out = books
+    .filter((b) => b.book_id != null)
+    .map((b) => ({ book_id: String(b.book_id), book_name: String(b.book_name || '') }))
+    .sort((a, b) => {
+      const aId = String(a.book_id || '').trim();
+      const bId = String(b.book_id || '').trim();
+      const aNum = Number(aId);
+      const bNum = Number(bId);
+      const aIsNum = Number.isFinite(aNum);
+      const bIsNum = Number.isFinite(bNum);
+      if (aIsNum && bIsNum) return aNum - bNum;
+      if (aIsNum) return -1;
+      if (bIsNum) return 1;
+      return aId.localeCompare(bId, 'zh-Hant', { numeric: true, sensitivity: 'base' });
+    });
+  return { books: out, user_name };
 }
 
 /**
- * 依 email 從訂閱表（gpt/4）取得該使用者姓名與教會（掃描所有有效訂閱列，取第一個非空值）
+ * 依 email 從 Wix 訂閱表取得該使用者姓名
  * @returns {Promise<{ user_name: string|null, church: string|null }>}
  */
 async function getSubscriptionUserInfo(userEmail) {
-  const { subscriptionFieldIds } = getConfig();
-  const data = await ragicGet(RAGIC_SHEETS.SUBSCRIPTION);
+  const { wixSubscriptionFieldIds } = getConfig();
+  const data = await ragicGet(RAGIC_SHEETS.WIX_SUBSCRIPTION);
   const rows = rowsToArray(data);
-  const email = String(userEmail || '').toLowerCase().trim();
-  let foundName = null;
-  let foundChurch = null;
-  for (const r of rows) {
-    const rEmail = getSubField(r, 'user_email', subscriptionFieldIds);
-    const rActive = getSubField(r, 'is_active', subscriptionFieldIds);
-    if (rEmail.toLowerCase().trim() !== email || !isSubscriptionActive(rActive)) continue;
-    if (foundName === null) {
-      const name = getSubField(r, 'user_name', subscriptionFieldIds);
-      if (name && String(name).trim()) foundName = String(name).trim();
-    }
-    if (foundChurch === null) {
-      const church = getSubField(r, 'church', subscriptionFieldIds);
-      if (church && String(church).trim()) foundChurch = String(church).trim();
-    }
-    if (foundName !== null && foundChurch !== null) break;
-  }
-  return { user_name: foundName, church: foundChurch };
+  const valid = getValidWixRows(rows, userEmail, wixSubscriptionFieldIds);
+  if (valid.length === 0) return { user_name: null, church: null };
+  const first = valid[0];
+  const user_name = getWixField(first, 'name', wixSubscriptionFieldIds).trim() || null;
+  return { user_name, church: null };
 }
 
 /**
- * 依 email 從訂閱表（gpt/4）取得該使用者姓名（第一筆有效訂閱的姓名）
+ * 依 email 從 Wix 訂閱表取得該使用者姓名
  * @returns {Promise<string|null>}
  */
 async function getSubscriptionUserName(userEmail) {
@@ -357,39 +405,6 @@ async function createReadingRecord(payload) {
 }
 
 /**
- * 寫入一筆對話紀錄到 gpt/10（對話紀錄表）。由各 route 在處理請求成功時順便呼叫（fire-and-forget）。
- * @param {{ email: string, user_name?: string, role: 'user'|'assistant', message: string, conversation_id?: string, record_time?: string }} payload
- */
-async function createConversationLog(payload) {
-  const { ragicBaseUrl, ragicApiKey, ragicApiKeyInQuery, ragicBasicRaw, conversationLogFieldIds } = getConfig();
-  const url = new URL(`${ragicBaseUrl}/${RAGIC_SHEETS.CONVERSATION_LOG}`);
-  url.searchParams.set('api', 'true');
-  if (ragicApiKey && ragicApiKeyInQuery) url.searchParams.set('APIKey', ragicApiKey);
-  const headers = {
-    'Content-Type': 'application/json',
-    ...getRagicAuthHeader(ragicApiKey, ragicApiKeyInQuery, ragicBasicRaw),
-  };
-  const ids = conversationLogFieldIds;
-  const body = {
-    [ids.record_time]: payload.record_time || formatRagicDateTimeTaipei(new Date()),
-    [ids.email]: String(payload.email || ''),
-    [ids.user_name]: String(payload.user_name ?? ''),
-    [ids.role]: String(payload.role || 'user'),
-    [ids.message]: String(payload.message ?? ''),
-    [ids.conversation_id]: String(payload.conversation_id ?? ''),
-  };
-  const res = await fetch(url.toString(), {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    throw new Error(`Ragic 寫入對話紀錄錯誤 ${res.status}: ${await res.text()}`);
-  }
-  return res.json();
-}
-
-/**
  * 取得使用者在指定書本的最後閱讀天數（從 gpt/7 閱讀紀錄取 reading_day 最大值）
  * @returns {Promise<number|null>} last_day 或 null（尚無紀錄）
  */
@@ -421,14 +436,16 @@ async function getBookDayTitles(bookId) {
   const map = new Map(); // day(number) -> title(string)
   let bookName = '';
   for (const r of rows) {
-    const rowBookId = String(r.book_id ?? '').trim();
+    const rowBookId = String(getContentSheetField(r, 'book_id') ?? '').trim();
     if (rowBookId !== wantId) continue;
-    const d = Number(r.day);
+    const d = Number(getContentSheetField(r, 'day'));
     if (!Number.isFinite(d)) continue;
     if (d < 1 || d > 31) continue;
-    if (!bookName && r.book_name) bookName = String(r.book_name);
-    if (!map.has(d) && r.title != null && String(r.title).trim() !== '') {
-      map.set(d, String(r.title));
+    const bn = getContentSheetField(r, 'book_name');
+    if (!bookName && bn) bookName = String(bn);
+    const tit = getContentSheetField(r, 'title');
+    if (!map.has(d) && tit != null && String(tit).trim() !== '') {
+      map.set(d, String(tit));
     }
   }
   const titles = Array.from({ length: 31 }, (_, idx) => {
@@ -441,6 +458,7 @@ async function getBookDayTitles(bookId) {
 module.exports = {
   ragicGet,
   rowsToArray,
+  getContentSheetField,
   getBookList,
   getContentByBookAndDay,
   checkSubscription,
@@ -450,7 +468,6 @@ module.exports = {
   getSubscriptionUserInfo,
   getProgressByEmail,
   createReadingRecord,
-  createConversationLog,
   getLastReadingDayByEmailAndBook,
   getBookDayTitles,
   RAGIC_SHEETS,

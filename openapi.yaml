@@ -1,35 +1,29 @@
 openapi: 3.1.0
 info:
-  title: 禱告時光 API
+  title: 第一階門訓課程助理 API
   description: |
-    禱告手冊清單、每日內容、閱讀進度。身分驗證可二選一：(1) query 參數 email；(2) Authorization Bearer（OAuth）。建議 GPTs 使用 email 流程：先問 email → 呼叫 GET /email/books → 有訂閱則列書選書，無則提供訂閱表單連結。
-    選填：任一 API 可帶 query 參數 conversation_id（同一輪對話使用相同 ID），後端會將請求寫入對話紀錄（gpt/10）並以該 ID 歸組。
+    禱告手冊清單、每日內容、閱讀進度。身分驗證使用 query 參數 email。建議 GPTs 使用 email 流程：先問 email → 呼叫 GET /email/books → 有訂閱則列書選書，無訂閱則回覆尚未訂閱。
   version: 1.0.0
 
 servers:
-  - url: https://prayer-time-api-43747267943.asia-northeast1.run.app
-    description: Cloud Run 禱告時光 API
+  - url: https://stage1-discipleship-assistant-api-43747267943.asia-northeast1.run.app
+    description: Cloud Run 第一階門訓課程助理 API
 
 paths:
   /email/books:
     get:
       operationId: getEmailBooks
-      summary: 依 email 查詢已訂閱書單（不需 Bearer）
-      description: 依訂閱時使用的 email 查詢 Ragic 訂閱紀錄，回傳該 email 已訂閱的書單與訂閱表單連結。無需登入或 Bearer。
+      summary: 依 email 查詢已訂閱書單
+      description: 依訂閱時使用的 email 查詢 Wix 訂閱紀錄，回傳該 email 已訂閱的書單。
       parameters:
         - name: email
           in: query
           required: true
           schema: { type: string, format: email }
           description: 使用者訂閱時使用的 Email
-        - name: conversation_id
-          in: query
-          required: false
-          schema: { type: string }
-          description: 選填。同一輪對話使用相同 ID，會寫入對話紀錄（gpt/10）並歸組
       responses:
         '200':
-          description: 已訂閱書單與表單連結
+          description: 已訂閱書單
           content:
             application/json:
               schema:
@@ -44,9 +38,8 @@ paths:
                         number: { type: integer, description: '選項編號（1、2、3…），使用者回覆此數字時請用本筆的 book_id' }
                         book_id: { type: string }
                         book_name: { type: string }
-                  subscription_form_url: { type: string, description: 尚未訂閱時可提供此連結；僅在 all_books_subscribed 為 false 時顯示' }
                   user_name: { type: string, nullable: true, description: '訂閱表填寫的姓名，取得後可用於問候' }
-                  all_books_subscribed: { type: boolean, description: 'true 表示已訂閱所有可用手冊，僅顯示書單、不顯示訂閱連結；false 時可顯示「可前往訂閱」連結' }
+                  all_books_subscribed: { type: boolean, description: 'true 表示已訂閱所有可用手冊；false 表示仍有未訂閱手冊' }
         '400':
           description: 缺少 email 參數
 
@@ -54,13 +47,13 @@ paths:
     get:
       operationId: init
       summary: 初始化（訂閱狀態 + 手冊清單）
-      description: 單次呼叫回傳 hasSubscription 與 books（已訂閱才回傳 books）。身分請帶 query email 或 Authorization Bearer。
+      description: 單次呼叫回傳 hasSubscription 與 books（已訂閱才回傳 books）。身分請帶 query email。
       parameters:
         - name: email
           in: query
           required: false
           schema: { type: string }
-          description: 訂閱時使用的 Email（與 Bearer 二選一）
+          description: 訂閱時使用的 Email
       responses:
         '200':
           description: 初始化結果
@@ -104,7 +97,7 @@ paths:
       operationId: getContent
       summary: 取得指定手冊指定日的內容
       description: |
-        依 book_id 與 day 回傳當日禱告內容。身分請帶 query email 或 Bearer。
+        依 book_id 與 day 回傳當日禱告內容。身分請帶 query email。
         若尚未訂閱該手冊，仍回傳 200，body 含 subscribed false 與 error，請以查詢結果方式呈現。
         成功回傳內容時，後端會自動寫入一筆閱讀紀錄（gpt/7），包含 email、書、天數、閱讀時間，以及從訂閱表帶入的姓名、教會。
       parameters:
@@ -112,7 +105,7 @@ paths:
           in: query
           required: false
           schema: { type: string }
-          description: 訂閱時使用的 Email（與 Bearer 二選一）
+          description: 訂閱時使用的 Email
         - name: book_id
           in: query
           required: true
@@ -123,11 +116,6 @@ paths:
           required: false
           schema: { type: integer, minimum: 1, maximum: 31 }
           description: 第幾天（1–31），不傳則為「今天」對應的日
-        - name: conversation_id
-          in: query
-          required: false
-          schema: { type: string }
-          description: 選填。同一輪對話使用相同 ID，會寫入對話紀錄（gpt/10）
       responses:
         '200':
           description: 當日內容或未訂閱結果（依 body 的 subscribed 判斷）
@@ -147,7 +135,7 @@ paths:
                     description: 未訂閱
                     properties:
                       subscribed: { type: boolean, example: false }
-                      error: { type: string, example: '很抱歉，您尚未訂閱禱告時光！' }
+                      error: { type: string, example: '很抱歉，您尚未訂閱第一階門訓課程助理！' }
         '404':
           description: 找不到該日內容
 
@@ -155,13 +143,13 @@ paths:
     get:
       operationId: getTitles
       summary: 取得指定手冊 1–31 天標題清單
-      description: 依 book_id 回傳該手冊 1–31 天的標題清單。身分請帶 query email 或 Bearer。
+      description: 依 book_id 回傳該手冊 1–31 天的標題清單。身分請帶 query email。
       parameters:
         - name: email
           in: query
           required: false
           schema: { type: string }
-          description: 訂閱時使用的 Email（與 Bearer 二選一）
+          description: 訂閱時使用的 Email
         - name: book_id
           in: query
           required: true
@@ -191,19 +179,19 @@ paths:
                     description: 未訂閱
                     properties:
                       subscribed: { type: boolean, example: false }
-                      error: { type: string, example: '很抱歉，您尚未訂閱禱告時光！' }
+                      error: { type: string, example: '很抱歉，您尚未訂閱第一階門訓課程助理！' }
 
   /progress:
     get:
       operationId: getProgress
       summary: 取得當前使用者的閱讀進度
-      description: 依 email（query 或 Bearer 取得）從閱讀紀錄推導最後一次閱讀的手冊與天數。
+      description: 依 email 從閱讀紀錄推導最後一次閱讀的手冊與天數。
       parameters:
         - name: email
           in: query
           required: false
           schema: { type: string }
-          description: 訂閱時使用的 Email（與 Bearer 二選一）
+          description: 訂閱時使用的 Email
       responses:
         '200':
           description: 閱讀進度
@@ -222,13 +210,13 @@ paths:
     get:
       operationId: getSubscriptionStatus
       summary: 取得當前使用者的訂閱狀態
-      description: 依 email（query 或 Bearer）檢查是否有任一有效訂閱。
+      description: 依 email 檢查是否有任一有效訂閱。
       parameters:
         - name: email
           in: query
           required: false
           schema: { type: string }
-          description: 訂閱時使用的 Email（與 Bearer 二選一）
+          description: 訂閱時使用的 Email
       responses:
         '200':
           description: 訂閱狀態
@@ -243,13 +231,13 @@ paths:
     get:
       operationId: getLastReadingDay
       summary: 取得使用者在指定手冊的最後閱讀天數
-      description: 依 email（query 或 Bearer）與 book_id 從閱讀紀錄找出該手冊最後閱讀天數，並回傳 next_day。
+      description: 依 email 與 book_id 從閱讀紀錄找出該手冊最後閱讀天數，並回傳 next_day。
       parameters:
         - name: email
           in: query
           required: false
           schema: { type: string }
-          description: 訂閱時使用的 Email（與 Bearer 二選一）
+          description: 訂閱時使用的 Email
         - name: book_id
           in: query
           required: true
@@ -266,3 +254,81 @@ paths:
                   book_id: { type: string }
                   last_day: { type: integer, nullable: true, description: 該書最後閱讀天數；無紀錄則為 null }
                   next_day: { type: integer, description: 建議讀取天數（last_day+1；無紀錄則為 1） }
+
+  /qa:
+    get:
+      operationId: getQa
+      summary: 整本手冊 QA（RAG）
+      description: |
+        依問題從向量庫搜尋相關禱告手冊內容，並以 AI 生成回答。身分請帶 query email。
+        使用者須有至少一筆有效訂閱；若提供 book_id，則須已訂閱該手冊。
+      parameters:
+        - name: email
+          in: query
+          required: false
+          schema: { type: string }
+          description: 訂閱時使用的 Email
+        - name: question
+          in: query
+          required: true
+          schema: { type: string }
+          description: 使用者問題（對整本手冊的提問）
+        - name: book_id
+          in: query
+          required: false
+          schema: { type: string }
+          description: 手冊 ID（選填，限定搜尋範圍；未提供則搜尋所有）
+      responses:
+        '200':
+          description: AI 回答與出處
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  answer: { type: string, description: AI 生成的回答 }
+                  sources:
+                    type: array
+                    description: 參考內容出處（書名、天數）
+                    items:
+                      type: object
+                      properties:
+                        book_name: { type: string }
+                        day: { type: integer }
+        '400':
+          description: 缺少 question
+        '403':
+          description: 未訂閱或無權限
+    post:
+      operationId: postQa
+      summary: 整本手冊 QA（RAG，POST）
+      description: 同 GET /qa，但 question 與 book_id 可放於 body。
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question: { type: string }
+                book_id: { type: string }
+      responses:
+        '200':
+          description: AI 回答與出處
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  answer: { type: string }
+                  sources:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        book_name: { type: string }
+                        day: { type: integer }
+        '400':
+          description: 缺少 question
+        '403':
+          description: 未訂閱或無權限

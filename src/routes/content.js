@@ -1,4 +1,10 @@
-const { getContentByBookAndDay, checkSubscription, createReadingRecord, getSubscriptionUserInfo, createConversationLog } = require('../ragic');
+const {
+  getContentByBookAndDay,
+  checkSubscription,
+  createReadingRecord,
+  getSubscriptionUserInfo,
+  getContentSheetField,
+} = require('../ragic');
 
 function getTodayDay() {
   return new Date().getDate();
@@ -32,7 +38,7 @@ async function getContent(req, res) {
     if (!subscribed) {
       return res.status(200).json({
         subscribed: false,
-        error: '很抱歉，您尚未訂閱禱告時光！',
+        error: '很抱歉，您尚未訂閱第一階門訓課程助理！',
       });
     }
 
@@ -46,15 +52,35 @@ async function getContent(req, res) {
     }
 
     // #region agent log
-    _log('/content row returned', { request_book_id: bookId, returned_book_id: row.book_id, returned_book_name: row.book_name }, 'H2,H4');
+    _log('/content row returned', {
+      request_book_id: bookId,
+      returned_book_id: getContentSheetField(row, 'book_id'),
+      returned_book_name: getContentSheetField(row, 'book_name'),
+    }, 'H2,H4');
     // #endregion
 
+    // 若 content 第一行與 title 相同，從 content 移除該行，避免前端／GPT 顯示兩次標題
+    const rawContent = String(getContentSheetField(row, 'content') ?? '');
+    const titleTrimmed = String(getContentSheetField(row, 'title') ?? '').trim();
+    let contentToReturn = rawContent;
+    if (titleTrimmed) {
+      const lines = rawContent.split(/\r?\n/);
+      const firstLine = (lines[0] || '').trim();
+      if (firstLine === titleTrimmed && lines.length > 1) {
+        contentToReturn = lines.slice(1).join('\n');
+      } else if (firstLine === titleTrimmed && lines.length === 1) {
+        contentToReturn = '';
+      }
+    }
+
+    const rowBookId = String(getContentSheetField(row, 'book_id') || bookId);
+    const rowDay = Number(getContentSheetField(row, 'day'));
     const contentPayload = {
-      book_id: row.book_id,
-      book_name: row.book_name,
-      day: row.day,
-      title: row.title,
-      content: row.content,
+      book_id: rowBookId,
+      book_name: getContentSheetField(row, 'book_name'),
+      day: Number.isFinite(rowDay) ? rowDay : day,
+      title: getContentSheetField(row, 'title'),
+      content: contentToReturn,
     };
 
     try {
@@ -63,23 +89,15 @@ async function getContent(req, res) {
       }
       await createReadingRecord({
         user_email: userEmail,
-        book_id: row.book_id,
-        book_name: row.book_name || '',
-        reading_day: row.day,
+        book_id: rowBookId,
+        book_name: String(getContentSheetField(row, 'book_name') || ''),
+        reading_day: Number.isFinite(rowDay) ? rowDay : day,
         user_name: userInfo.user_name ?? '',
         church: userInfo.church ?? '',
       });
     } catch (recordErr) {
       console.error('寫入閱讀紀錄失敗:', recordErr);
     }
-
-    createConversationLog({
-      email: userEmail,
-      user_name: userInfo.user_name ?? '',
-      role: 'user',
-      message: `取得內容 書本:${row.book_name} 第${row.day}天`,
-      conversation_id: (req.query.conversation_id || '').trim(),
-    }).catch((err) => console.error('對話紀錄寫入失敗:', err));
 
     res.json(contentPayload);
   } catch (err) {

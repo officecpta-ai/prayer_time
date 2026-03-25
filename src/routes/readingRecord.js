@@ -1,4 +1,4 @@
-const { getLastReadingDayByEmailAndBook, createConversationLog } = require('../ragic');
+const { getLastReadingDayByEmailAndBook } = require('../ragic');
 
 async function getLastReadingDay(req, res) {
   try {
@@ -9,13 +9,6 @@ async function getLastReadingDay(req, res) {
     }
     const last_day = await getLastReadingDayByEmailAndBook(userEmail, bookId);
     const next_day = last_day == null ? 1 : Math.min(31, Number(last_day) + 1);
-    createConversationLog({
-      email: userEmail,
-      user_name: '',
-      role: 'user',
-      message: `查詢最後閱讀天數 書本:${bookId}`,
-      conversation_id: (req.query.conversation_id || '').trim(),
-    }).catch((err) => console.error('對話紀錄寫入失敗:', err));
     return res.json({ book_id: String(bookId), last_day, next_day });
   } catch (err) {
     console.error(err);
