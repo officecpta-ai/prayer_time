@@ -5,6 +5,7 @@ const RAGIC_SHEETS = {
   CONTENT: 'gpt/3',
   WIX_SUBSCRIPTION: 'gpt/9',
   READING_RECORD: 'gpt/7',
+  CONVERSATION_LOG: 'gpt/10',
 };
 
 /**
@@ -146,6 +147,7 @@ async function getContentByBookAndDay(bookId, day) {
 const WIX_ALT_KEYS = {
   name: ['name', 'Name'],
   email: ['email', 'Email'],
+  church: ['church', 'Church'],
   mobile: ['mobile', 'Mobile'],
   course_name: ['course_name', 'courseName'],
   price_amount: ['price_amount', 'priceAmount'],
@@ -283,7 +285,8 @@ async function getSubscriptionUserInfo(userEmail) {
   if (valid.length === 0) return { user_name: null, church: null };
   const first = valid[0];
   const user_name = getWixField(first, 'name', wixSubscriptionFieldIds).trim() || null;
-  return { user_name, church: null };
+  const church = getWixField(first, 'church', wixSubscriptionFieldIds).trim() || null;
+  return { user_name, church };
 }
 
 /**
@@ -367,6 +370,15 @@ function formatRagicDateTimeTaipei(d) {
 }
 
 /**
+ * 將 Date 轉為 Ragic 可用的日期時間字串（台灣時區）：yyyy/MM/dd HH:mm
+ * @param {Date} d
+ */
+function formatRagicDateTimeTaipeiMinute(d) {
+  // 直接重用秒級格式再截斷到分鐘
+  return formatRagicDateTimeTaipei(d).slice(0, 16);
+}
+
+/**
  * 寫入一筆閱讀紀錄到 gpt/7（閱讀紀錄表）。每次使用者成功取得某日內容時呼叫。
  * @param {{ user_email: string, book_id: string, book_name: string, reading_day: number, read_time?: string, user_name?: string, church?: string }} payload
  */
@@ -400,6 +412,52 @@ async function createReadingRecord(payload) {
   });
   if (!res.ok) {
     throw new Error(`Ragic 寫入閱讀紀錄錯誤 ${res.status}: ${await res.text()}`);
+  }
+  return res.json();
+}
+
+/**
+ * 寫入一筆對話紀錄到 gpt/10（僅在 /qa 呼叫成功產生 answer 後寫入）。
+ * @param {{ email: string, user_name?: string|null, church?: string|null, role: 'user'|'assistant', messageHtml: string, conversation_id: string }} payload
+ */
+async function createConversationLog(payload) {
+  const { email, user_name, church, role, messageHtml, conversation_id } = payload || {};
+
+  const { ragicBaseUrl, ragicApiKey, ragicApiKeyInQuery, ragicBasicRaw, conversationLogFieldIds } = getConfig();
+  const url = new URL(`${ragicBaseUrl}/${RAGIC_SHEETS.CONVERSATION_LOG}`);
+  url.searchParams.set('api', 'true');
+  if (ragicApiKey && ragicApiKeyInQuery) url.searchParams.set('APIKey', ragicApiKey);
+
+  const ids = conversationLogFieldIds;
+  const ts = formatRagicDateTimeTaipeiMinute(new Date());
+
+  // Ragic message 欄位是富文字（HTML），這裡假設呼叫端已提供可直接寫入的 HTML。
+  const body = {
+    [ids.timestamp]: ts,
+    [ids.email]: String(email ?? ''),
+    [ids.name]: String(user_name ?? ''),
+    [ids.church]: String(church ?? ''),
+    [ids.role]: String(role ?? ''),
+    [ids.message]: String(messageHtml ?? ''),
+    [ids.conversation_id]: String(conversation_id ?? ''),
+  };
+
+  const headers = {
+    'Content-Type': 'application/json',
+    ...getRagicAuthHeader(ragicApiKey, ragicApiKeyInQuery, ragicBasicRaw),
+  };
+
+  if (!body[ids.role] || !body[ids.conversation_id]) {
+    throw new Error('createConversationLog：role 或 conversation_id 為空，已拒絕寫入');
+  }
+
+  const res = await fetch(url.toString(), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`Ragic 寫入對話紀錄錯誤 ${res.status}: ${await res.text()}`);
   }
   return res.json();
 }
@@ -468,6 +526,7 @@ module.exports = {
   getSubscriptionUserInfo,
   getProgressByEmail,
   createReadingRecord,
+  createConversationLog,
   getLastReadingDayByEmailAndBook,
   getBookDayTitles,
   RAGIC_SHEETS,

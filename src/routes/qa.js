@@ -1,4 +1,11 @@
-const { checkSubscription, hasAnySubscription, getSubscribedBooksByEmail } = require('../ragic');
+const crypto = require('crypto');
+const {
+  checkSubscription,
+  hasAnySubscription,
+  getSubscribedBooksByEmail,
+  getSubscriptionUserInfo,
+  createConversationLog,
+} = require('../ragic');
 const { searchChunks } = require('../qdrant');
 const { embedBatch, l2Normalize, generateAnswerWithContext } = require('../openai');
 
@@ -23,6 +30,39 @@ function getBookIdFromRequest(req) {
 }
 
 /**
+ * 從 query（GET）或 body（POST）取得 conversation_id（選填）
+ */
+function getConversationIdFromRequest(req) {
+  const fromQuery = req.query?.conversation_id;
+  const fromBody = req.body?.conversation_id;
+  const raw = typeof fromQuery === 'string' ? fromQuery : (typeof fromBody === 'string' ? fromBody : '');
+  const v = (raw && String(raw).trim()) || '';
+  return v || null;
+}
+
+function generateConversationId() {
+  // 16 hex chars；僅用於 gpt/10 欄位歸組
+  return crypto.randomBytes(8).toString('hex');
+}
+
+function escapeHtml(text) {
+  const s = String(text ?? '');
+  return s
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function toRichTextHtml(text) {
+  // Ragic 的 message 欄位：寫入 HTML（富文字）
+  const s = escapeHtml(text);
+  const withBreaks = s.replace(/\n/g, '<br/>');
+  return `<p>${withBreaks}</p>`;
+}
+
+/**
  * GET /qa?question=...&book_id=... 或 POST /qa { question, book_id? }
  * 驗證：requireEmailOrAuth，若提供 book_id 則檢查訂閱
  */
@@ -31,6 +71,7 @@ async function getQa(req, res) {
     const question = getQuestionFromRequest(req);
     const bookId = getBookIdFromRequest(req);
     const userEmail = req.userEmail;
+    const conversationId = getConversationIdFromRequest(req) || generateConversationId();
 
     if (!question) {
       return res.status(400).json({ error: '請提供 question' });
@@ -47,6 +88,8 @@ async function getQa(req, res) {
         return res.status(403).json({ error: '您尚未訂閱此手冊，無法使用整本手冊 QA' });
       }
     }
+
+    const userInfoPromise = getSubscriptionUserInfo(userEmail).catch(() => null);
 
     const embeddings = await embedBatch([question]);
     const queryEmbedding = embeddings[0];
@@ -83,6 +126,36 @@ async function getQa(req, res) {
 
     const answer = await generateAnswerWithContext({ question, contexts });
     const sources = buildSources(chunks);
+
+    // 寫入對話紀錄（只記 QA）：兩筆（user + assistant），且 conversation_id 相同
+    try {
+      const userInfo = await userInfoPromise;
+      const user_name = userInfo?.user_name ?? '';
+      const church = userInfo?.church ?? '';
+
+      const [userLogRes, assistantLogRes] = await Promise.all([
+        createConversationLog({
+          email: userEmail,
+          user_name,
+          church,
+          role: 'user',
+          messageHtml: toRichTextHtml(question),
+          conversation_id: conversationId,
+        }),
+        createConversationLog({
+          email: userEmail,
+          user_name,
+          church,
+          role: 'assistant',
+          messageHtml: toRichTextHtml(answer),
+          conversation_id: conversationId,
+        }),
+      ]);
+      void userLogRes;
+      void assistantLogRes;
+    } catch (logErr) {
+      console.error('[qa] createConversationLog failed:', logErr);
+    }
 
     return res.json({ answer, sources });
   } catch (err) {

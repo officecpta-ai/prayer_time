@@ -278,6 +278,11 @@ paths:
           required: false
           schema: { type: string }
           description: 手冊 ID（選填，限定搜尋範圍；未提供則搜尋所有）
+        - name: conversation_id
+          in: query
+          required: false
+          schema: { type: string }
+          description: 對話群組 id（不傳則由後端生成）
       responses:
         '200':
           description: AI 回答與出處
@@ -312,6 +317,9 @@ paths:
               properties:
                 question: { type: string }
                 book_id: { type: string }
+                conversation_id:
+                  type: string
+                  description: 對話群組 id（不傳則由後端生成）
       responses:
         '200':
           description: AI 回答與出處

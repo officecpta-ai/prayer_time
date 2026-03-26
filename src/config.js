@@ -58,6 +58,7 @@ function getConfig() {
   const wixSubscriptionFieldIds = {
     name: process.env.RAGIC_WIX_FIELD_NAME || '1012061',
     email: process.env.RAGIC_WIX_FIELD_EMAIL || '1011774',
+    church: process.env.RAGIC_WIX_FIELD_CHURCH || '1012073',
     mobile: process.env.RAGIC_WIX_FIELD_MOBILE || '1012062',
     course_name: process.env.RAGIC_WIX_FIELD_COURSE_NAME || '1011777',
     price_amount: process.env.RAGIC_WIX_FIELD_PRICE_AMOUNT || '1011779',
@@ -65,6 +66,17 @@ function getConfig() {
     end_date: process.env.RAGIC_WIX_FIELD_END_DATE || '1011783',
     orderNumbe: process.env.RAGIC_WIX_FIELD_ORDER_NUMBE || '1011778',
     ticketNumber: process.env.RAGIC_WIX_FIELD_TICKET_NUMBER || '1012060',
+  };
+
+  // 對話紀錄表（gpt/10）：僅在 /qa 呼叫後寫入兩筆（user/assistant）
+  const conversationLogFieldIds = {
+    timestamp: process.env.RAGIC_CONVERSATION_LOG_FIELD_TIMESTAMP || '1011812',
+    email: process.env.RAGIC_CONVERSATION_LOG_FIELD_EMAIL || '1011813',
+    name: process.env.RAGIC_CONVERSATION_LOG_FIELD_NAME || '1011814',
+    church: process.env.RAGIC_CONVERSATION_LOG_FIELD_CHURCH || '1012074',
+    role: process.env.RAGIC_CONVERSATION_LOG_FIELD_ROLE || '1011817',
+    message: process.env.RAGIC_CONVERSATION_LOG_FIELD_MESSAGE || '1011815',
+    conversation_id: process.env.RAGIC_CONVERSATION_LOG_FIELD_CONVERSATION_ID || '1012075',
   };
 
   return {
@@ -83,6 +95,7 @@ function getConfig() {
     readingRecordFieldIds,
     contentSheetFieldIds,
     wixSubscriptionFieldIds,
+    conversationLogFieldIds,
   };
 }
 
