@@ -51,9 +51,9 @@ paths:
       parameters:
         - name: email
           in: query
-          required: false
-          schema: { type: string }
-          description: 訂閱時使用的 Email
+          required: true
+          schema: { type: string, format: email }
+          description: 訂閱時使用的 Email（必填；未取得使用者 email 前勿呼叫）
       responses:
         '200':
           description: 初始化結果
@@ -103,9 +103,9 @@ paths:
       parameters:
         - name: email
           in: query
-          required: false
-          schema: { type: string }
-          description: 訂閱時使用的 Email
+          required: true
+          schema: { type: string, format: email }
+          description: 訂閱時使用的 Email（必填；未取得使用者 email 前勿呼叫）
         - name: book_id
           in: query
           required: true
@@ -147,9 +147,9 @@ paths:
       parameters:
         - name: email
           in: query
-          required: false
-          schema: { type: string }
-          description: 訂閱時使用的 Email
+          required: true
+          schema: { type: string, format: email }
+          description: 訂閱時使用的 Email（必填；未取得使用者 email 前勿呼叫）
         - name: book_id
           in: query
           required: true
@@ -189,9 +189,9 @@ paths:
       parameters:
         - name: email
           in: query
-          required: false
-          schema: { type: string }
-          description: 訂閱時使用的 Email
+          required: true
+          schema: { type: string, format: email }
+          description: 訂閱時使用的 Email（必填；未取得使用者 email 前勿呼叫）
       responses:
         '200':
           description: 閱讀進度
@@ -214,9 +214,9 @@ paths:
       parameters:
         - name: email
           in: query
-          required: false
-          schema: { type: string }
-          description: 訂閱時使用的 Email
+          required: true
+          schema: { type: string, format: email }
+          description: 訂閱時使用的 Email（必填；未取得使用者 email 前勿呼叫）
       responses:
         '200':
           description: 訂閱狀態
@@ -235,9 +235,9 @@ paths:
       parameters:
         - name: email
           in: query
-          required: false
-          schema: { type: string }
-          description: 訂閱時使用的 Email
+          required: true
+          schema: { type: string, format: email }
+          description: 訂閱時使用的 Email（必填；未取得使用者 email 前勿呼叫）
         - name: book_id
           in: query
           required: true
@@ -265,9 +265,9 @@ paths:
       parameters:
         - name: email
           in: query
-          required: false
-          schema: { type: string }
-          description: 訂閱時使用的 Email
+          required: true
+          schema: { type: string, format: email }
+          description: 訂閱時使用的 Email（必填；未取得使用者 email 前勿呼叫）
         - name: question
           in: query
           required: true
@@ -282,7 +282,12 @@ paths:
           in: query
           required: false
           schema: { type: string }
-          description: 對話群組 id（不傳則由後端生成）
+          description: 對話群組 id（不傳則由後端生成並於回應回傳）；同一 ChatGPT 對話內多輪追問請沿用上一則回應的 conversation_id
+        - name: mode
+          in: query
+          required: false
+          schema: { type: string, enum: [companion] }
+          description: 保留欄位（可忽略）；通過訂閱檢查且成功產生回答之 QA 皆會寫入對話紀錄
       responses:
         '200':
           description: AI 回答與出處
@@ -290,6 +295,7 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [answer, sources, conversation_id]
                 properties:
                   answer: { type: string, description: AI 生成的回答 }
                   sources:
@@ -300,12 +306,16 @@ paths:
                       properties:
                         book_name: { type: string }
                         day: { type: integer }
+                  conversation_id:
+                    type: string
+                    description: 本筆 QA 所屬群組 id；多輪追問時請帶回同一值
         '400':
           description: 缺少 question
         '403':
           description: 未訂閱或無權限
     post:
       operationId: postQa
+      x-openai-isConsequential: false
       summary: 整本手冊 QA（RAG，POST）
       description: 同 GET /qa，但 question 與 book_id 可放於 body。
       requestBody:
@@ -313,13 +323,18 @@ paths:
           application/json:
             schema:
               type: object
-              required: [question]
+              required: [email, question]
               properties:
+                email: { type: string, format: email, description: 訂閱時使用的 Email（必填；未取得使用者 email 前勿呼叫） }
                 question: { type: string }
                 book_id: { type: string }
                 conversation_id:
                   type: string
-                  description: 對話群組 id（不傳則由後端生成）
+                  description: 對話群組 id（不傳則由後端生成並於回應回傳）；多輪追問請沿用上一則回應的 conversation_id
+                mode:
+                  type: string
+                  enum: [companion]
+                  description: 保留欄位（可忽略）；通過訂閱檢查且成功產生回答之 QA 皆會寫入對話紀錄
       responses:
         '200':
           description: AI 回答與出處
@@ -327,6 +342,7 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [answer, sources, conversation_id]
                 properties:
                   answer: { type: string }
                   sources:
@@ -336,7 +352,57 @@ paths:
                       properties:
                         book_name: { type: string }
                         day: { type: integer }
+                  conversation_id:
+                    type: string
+                    description: 本筆 QA 所屬群組 id；多輪追問時請帶回同一值
         '400':
           description: 缺少 question
+        '403':
+          description: 未訂閱或無權限
+
+  /companion/log:
+    post:
+      operationId: postCompanionLog
+      x-openai-isConsequential: false
+      summary: 陪談與靈修心得每輪寫入對話紀錄
+      description: |
+        供 Companion Mode 與靈修心得分享模式每輪對話落紀錄到 Ragic gpt/10。
+        每次需同時提供 user_message 與 assistant_message；
+        若未帶 conversation_id，後端會自動生成並回傳，後續同主題請沿用。
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, user_message, assistant_message]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: 訂閱時使用的 Email（必填）
+                user_message:
+                  type: string
+                  description: 本輪使用者訊息（原文）
+                assistant_message:
+                  type: string
+                  description: 本輪助手回覆（原文）
+                conversation_id:
+                  type: string
+                  description: 對話群組 id（不傳則由後端生成並於回應回傳）
+      responses:
+        '200':
+          description: 寫入成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, conversation_id]
+                properties:
+                  ok: { type: boolean, example: true }
+                  conversation_id:
+                    type: string
+                    description: 本輪寫入所屬群組 id
+        '400':
+          description: 缺少 user_message 或 assistant_message
         '403':
           description: 未訂閱或無權限

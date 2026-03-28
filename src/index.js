@@ -12,6 +12,7 @@ const { getLastReadingDay } = require('./routes/readingRecord');
 const { getTitles } = require('./routes/titles');
 const { init } = require('./routes/init');
 const { getQa } = require('./routes/qa');
+const { postCompanionLog } = require('./routes/companionLog');
 const { postInternalSyncRagicToQdrant } = require('./routes/syncQdrant');
 
 const app = express();
@@ -44,6 +45,7 @@ app.get('/init', requireEmailOrAuth, init);
 
 app.get('/qa', requireEmailOrAuth, getQa);
 app.post('/qa', requireEmailOrAuth, getQa);
+app.post('/companion/log', requireEmailOrAuth, postCompanionLog);
 
 /** Ragic→Qdrant 同步（需 SYNC_QDRANT_SECRET；供排程 POST，不列入公開 API 文件） */
 app.post('/internal/sync-ragic-to-qdrant', postInternalSyncRagicToQdrant);

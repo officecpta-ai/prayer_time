@@ -115,6 +115,7 @@ async function getQa(req, res) {
       return res.json({
         answer: '找不到相關內容，請換個方式提問或確認手冊已同步至向量庫。',
         sources: [],
+        conversation_id: conversationId,
       });
     }
 
@@ -127,7 +128,7 @@ async function getQa(req, res) {
     const answer = await generateAnswerWithContext({ question, contexts });
     const sources = buildSources(chunks);
 
-    // 寫入對話紀錄（只記 QA）：兩筆（user + assistant），且 conversation_id 相同
+    // 凡通過訂閱檢查且成功產生回答之 QA，皆寫入對話紀錄（user + assistant）
     try {
       const userInfo = await userInfoPromise;
       const user_name = userInfo?.user_name ?? '';
@@ -157,7 +158,7 @@ async function getQa(req, res) {
       console.error('[qa] createConversationLog failed:', logErr);
     }
 
-    return res.json({ answer, sources });
+    return res.json({ answer, sources, conversation_id: conversationId });
   } catch (err) {
     console.error('[qa] error:', err);
     return res.status(500).json({ error: 'QA 處理失敗' });
