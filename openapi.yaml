@@ -6,8 +6,10 @@ info:
   version: 1.0.0
 
 servers:
+  - url: https://your-service.zeabur.app
+    description: Zeabur 第一階門訓課程助理 API（請在正式切換前更新）
   - url: https://stage1-discipleship-assistant-api-43747267943.asia-northeast1.run.app
-    description: Cloud Run 第一階門訓課程助理 API
+    description: Legacy Cloud Run 回滾用 API
 
 paths:
   /email/books:

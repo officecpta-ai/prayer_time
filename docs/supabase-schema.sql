@@ -1,5 +1,11 @@
--- [歷史參考] 整本手冊 QA 向量庫已改為 Qdrant；若仍自行使用 Supabase pgvector，可在 SQL Editor 執行以下腳本。
 -- 第一階門訓課程助理 RAG：Supabase pgvector 表結構
+-- 使用方式：
+-- 1. 在 Supabase SQL Editor 執行本檔
+-- 2. 將專案環境變數設為：
+--    SUPABASE_DB_URL=<Direct connection Postgres URL>
+--    SUPABASE_DB_SCHEMA=public
+--    SUPABASE_CHUNKS_TABLE=prayer_chunks
+--    SUPABASE_MATCH_FUNCTION=match_prayer_chunks
 
 create extension if not exists vector;
 
@@ -24,13 +30,14 @@ create index if not exists prayer_chunks_embedding_idx
 create index if not exists prayer_chunks_book_id_idx on prayer_chunks (book_id);
 
 -- RPC：向量相似度搜尋
-create or replace function match_chunks(
+create or replace function match_prayer_chunks(
   query_embedding vector(1536),
   match_count int default 5,
   filter_book_id text default null
 )
 returns table (
   id text,
+  score double precision,
   book_id text,
   book_name text,
   day int,
@@ -42,6 +49,7 @@ language sql stable
 as $$
   select
     id,
+    1 - (embedding <=> query_embedding) as score,
     book_id,
     book_name,
     day,

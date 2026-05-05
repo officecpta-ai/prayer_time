@@ -58,7 +58,7 @@ async function ragicGet(sheetPath, queryParams = {}) {
     const st = String(data.status ?? '');
     const code = data.code != null ? String(data.code) : 'n/a';
     throw new Error(
-      `Ragic API 未回傳表列資料（${st}）：${msg}（code ${code}）。若金鑰與權限正確仍為 guest：本專案預設與 Cloud Run 相同為「Basic + 金鑰字面」（勿設 RAGIC_BASIC_RAW=false 除非確定要 Base64）；亦可改試 RAGIC_API_KEY_IN_QUERY=true。瀏覽器開 ?api=true 僅代表登入後可讀，與程式帶 API Key 不同。`
+      `Ragic API 未回傳表列資料（${st}）：${msg}（code ${code}）。若金鑰與權限正確仍為 guest：本專案預設為「Basic + 金鑰字面」（勿設 RAGIC_BASIC_RAW=false 除非確定要 Base64）；亦可改試 RAGIC_API_KEY_IN_QUERY=true。瀏覽器開 ?api=true 僅代表登入後可讀，與程式帶 API Key 不同。`
     );
   }
   return data;
@@ -354,7 +354,7 @@ async function getProgressByEmail(userEmail) {
  * @param {Date} d
  */
 function formatRagicDateTimeTaipei(d) {
-  // 使用固定時區避免 Cloud Run 預設 UTC 造成時間偏差
+  // 使用固定時區避免平台預設 UTC 造成時間偏差
   const s = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'Asia/Taipei',
     year: 'numeric',

@@ -47,7 +47,7 @@ app.get('/qa', requireEmailOrAuth, getQa);
 app.post('/qa', requireEmailOrAuth, getQa);
 app.post('/companion/log', requireEmailOrAuth, postCompanionLog);
 
-/** Ragic→Qdrant 同步（需 SYNC_QDRANT_SECRET；供排程 POST，不列入公開 API 文件） */
+/** Ragic→Supabase pgvector 同步（沿用既有 endpoint 名稱；需 SYNC_VECTOR_SECRET） */
 app.post('/internal/sync-ragic-to-qdrant', postInternalSyncRagicToQdrant);
 
 const { port } = getConfig();

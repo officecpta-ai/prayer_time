@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# 第一階門訓課程助理 API - 部署到 Google Cloud Run
-# 使用前：請先完成 docs/GCP_SETUP.md 的「一～五」步驟（gcloud 登入、專案、API、Secret、權限）
+# 第一階門訓課程助理 API - 部署到 Google Cloud Run（Legacy / Rollback）
+# 主要部署方式已改為 Zeabur + Supabase。
+# 使用前：請先完成 docs/GCP_SETUP.md 的對應步驟（gcloud 登入、專案、API、Secret、權限）
 
 set -e
 
@@ -57,20 +58,21 @@ fi
 ENV_VARS="RAGIC_BASE_URL=https://ap13.ragic.com/asiahope,RAGIC_BASIC_RAW=true"
 SECRETS_STR="RAGIC_API_KEY=ragic-api-key:latest"
 
-# Qdrant + OpenAI（整本手冊 QA）
-if [[ -n "$QDRANT_URL" ]]; then
-  ENV_VARS="${ENV_VARS},QDRANT_URL=${QDRANT_URL}"
-  if [[ -n "$QDRANT_API_KEY" ]]; then
-    ENV_VARS="${ENV_VARS},QDRANT_API_KEY=${QDRANT_API_KEY}"
-  fi
-  if [[ -n "$QDRANT_COLLECTION" ]]; then
-    ENV_VARS="${ENV_VARS},QDRANT_COLLECTION=${QDRANT_COLLECTION}"
-  fi
-  echo "已從 .env 帶入 Qdrant 變數"
+# Supabase + OpenAI（整本手冊 QA）
+if [[ -n "$SUPABASE_DB_URL" ]]; then
+  ENV_VARS="${ENV_VARS},SUPABASE_DB_URL=${SUPABASE_DB_URL}"
+  [[ -n "$SUPABASE_DB_SCHEMA" ]] && ENV_VARS="${ENV_VARS},SUPABASE_DB_SCHEMA=${SUPABASE_DB_SCHEMA}"
+  [[ -n "$SUPABASE_CHUNKS_TABLE" ]] && ENV_VARS="${ENV_VARS},SUPABASE_CHUNKS_TABLE=${SUPABASE_CHUNKS_TABLE}"
+  [[ -n "$SUPABASE_MATCH_FUNCTION" ]] && ENV_VARS="${ENV_VARS},SUPABASE_MATCH_FUNCTION=${SUPABASE_MATCH_FUNCTION}"
+  [[ -n "$SUPABASE_DB_SSL" ]] && ENV_VARS="${ENV_VARS},SUPABASE_DB_SSL=${SUPABASE_DB_SSL}"
+  echo "已從 .env 帶入 Supabase 變數"
 fi
-if [[ -n "$SYNC_QDRANT_SECRET" ]]; then
+if [[ -n "$SYNC_VECTOR_SECRET" ]]; then
+  ENV_VARS="${ENV_VARS},SYNC_VECTOR_SECRET=${SYNC_VECTOR_SECRET}"
+  echo "已從 .env 帶入 SYNC_VECTOR_SECRET（供排程 POST /internal/sync-ragic-to-qdrant）"
+elif [[ -n "$SYNC_QDRANT_SECRET" ]]; then
   ENV_VARS="${ENV_VARS},SYNC_QDRANT_SECRET=${SYNC_QDRANT_SECRET}"
-  echo "已從 .env 帶入 SYNC_QDRANT_SECRET（供排程 POST /internal/sync-ragic-to-qdrant）"
+  echo "已從 .env 帶入舊名稱 SYNC_QDRANT_SECRET（供排程 POST /internal/sync-ragic-to-qdrant）"
 fi
 if [[ -n "$OPENAI_API_KEY" ]]; then
   ENV_VARS="${ENV_VARS},OPENAI_API_KEY=${OPENAI_API_KEY}"

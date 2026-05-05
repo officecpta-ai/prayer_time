@@ -17,16 +17,18 @@ function getConfig() {
   // 僅當明確設 RAGIC_BASIC_RAW=false 時才改用 Base64(apiKey:)。
   const basicRaw = process.env.RAGIC_BASIC_RAW !== 'false';
 
-  // Qdrant（整本手冊 QA 向量庫）
-  const qdrantUrl = (process.env.QDRANT_URL || '').replace(/\/$/, '');
-  const qdrantApiKey = process.env.QDRANT_API_KEY || '';
-  const qdrantCollection = process.env.QDRANT_COLLECTION || 'prayer_chunks';
-  let syncQdrantSecret = (process.env.SYNC_QDRANT_SECRET || '').trim();
+  // Supabase pgvector（整本手冊 QA 向量庫）
+  const supabaseDbUrl = (process.env.SUPABASE_DB_URL || '').trim();
+  const supabaseSchema = (process.env.SUPABASE_DB_SCHEMA || 'public').trim() || 'public';
+  const supabaseChunksTable = (process.env.SUPABASE_CHUNKS_TABLE || 'prayer_chunks').trim() || 'prayer_chunks';
+  const supabaseMatchFunction = (process.env.SUPABASE_MATCH_FUNCTION || 'match_prayer_chunks').trim() || 'match_prayer_chunks';
+  const supabaseDbSsl = process.env.SUPABASE_DB_SSL !== 'false';
+  let syncVectorSecret = (process.env.SYNC_VECTOR_SECRET || process.env.SYNC_QDRANT_SECRET || '').trim();
   if (
-    (syncQdrantSecret.startsWith('"') && syncQdrantSecret.endsWith('"')) ||
-    (syncQdrantSecret.startsWith("'") && syncQdrantSecret.endsWith("'"))
+    (syncVectorSecret.startsWith('"') && syncVectorSecret.endsWith('"')) ||
+    (syncVectorSecret.startsWith("'") && syncVectorSecret.endsWith("'"))
   ) {
-    syncQdrantSecret = syncQdrantSecret.slice(1, -1).trim();
+    syncVectorSecret = syncVectorSecret.slice(1, -1).trim();
   }
 
   // OpenAI（embedding + QA 回答）
@@ -85,10 +87,12 @@ function getConfig() {
     ragicApiKeyInQuery: apiKeyInQuery,
     ragicBasicRaw: basicRaw,
     port: parseInt(process.env.PORT || '8080', 10),
-    qdrantUrl,
-    qdrantApiKey,
-    qdrantCollection,
-    syncQdrantSecret,
+    supabaseDbUrl,
+    supabaseSchema,
+    supabaseChunksTable,
+    supabaseMatchFunction,
+    supabaseDbSsl,
+    syncVectorSecret,
     openaiApiKey,
     openaiEmbedModel,
     openaiChatModel,

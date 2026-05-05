@@ -28,7 +28,7 @@ async function embedBatch(texts) {
 }
 
 /**
- * L2 正規化（Cosine 向量搜尋用，與 Qdrant Cosine 距離一致）
+ * L2 正規化（Cosine 向量搜尋用，與 pgvector cosine distance 一致）
  */
 function l2Normalize(vec) {
   if (!Array.isArray(vec) || vec.length === 0) return vec;

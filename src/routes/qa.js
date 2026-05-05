@@ -6,7 +6,7 @@ const {
   getSubscriptionUserInfo,
   createConversationLog,
 } = require('../ragic');
-const { searchChunks } = require('../qdrant');
+const { searchChunks } = require('../vectorStore');
 const { embedBatch, l2Normalize, generateAnswerWithContext } = require('../openai');
 
 /**
@@ -107,7 +107,7 @@ async function getQa(req, res) {
         filterBookId: bookId || null,
       });
     } catch (err) {
-      console.error('[qa] Qdrant search error:', err);
+      console.error('[qa] vector search error:', err);
       return res.status(500).json({ error: '向量搜尋失敗' });
     }
 

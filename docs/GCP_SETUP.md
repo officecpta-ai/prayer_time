@@ -1,6 +1,12 @@
-# Google Cloud 設定步驟（第一階門訓課程助理 API）
+# Google Cloud 設定步驟（第一階門訓課程助理 API，Legacy / Rollback）
 
-依序完成以下步驟，即可將 API 部署到 Cloud Run。
+本專案目前的主要部署方式已改為 `Zeabur + Supabase`，請優先閱讀 [ZEABUR_SUPABASE_SETUP.md](./ZEABUR_SUPABASE_SETUP.md)。
+
+本文件保留給以下情境使用：
+
+- 舊版 Cloud Run 服務回滾
+- Zeabur 切換期間的比對驗證
+- 尚未完成最終切換前的暫時維運
 
 ---
 

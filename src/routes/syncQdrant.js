@@ -20,17 +20,17 @@ function timingSafeEqualStr(a, b) {
 
 /**
  * POST /internal/sync-ragic-to-qdrant
- * Header: Authorization: Bearer <SYNC_QDRANT_SECRET>（或 X-Sync-Secret: 同值）
- * 供本機／Cloud Scheduler 等排程觸發，勿暴露於公開 OpenAPI。
+ * Header: Authorization: Bearer <SYNC_VECTOR_SECRET>（或 X-Sync-Secret: 同值）
+ * 沿用既有 endpoint 名稱，實際同步目標為 Supabase pgvector。
  */
 async function postInternalSyncRagicToQdrant(req, res) {
-  const { syncQdrantSecret } = getConfig();
-  if (!syncQdrantSecret) {
+  const { syncVectorSecret } = getConfig();
+  if (!syncVectorSecret) {
     return res.status(404).json({ error: 'not found' });
   }
   const token =
     getBearerToken(req) || String(req.headers['x-sync-secret'] || '').trim();
-  if (!timingSafeEqualStr(token, syncQdrantSecret)) {
+  if (!timingSafeEqualStr(token, syncVectorSecret)) {
     return res.status(401).json({ error: 'unauthorized' });
   }
   if (inFlight) {
